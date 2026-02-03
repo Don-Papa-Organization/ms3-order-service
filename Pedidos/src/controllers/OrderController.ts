@@ -1,24 +1,22 @@
-import { Request, Response } from "express";
-import { DIContainer } from "../di/container";
-import { OrderValidator } from "../validators/orderValidator";
+import { Request, Response, NextFunction } from "express";
+import { cartService, orderService, orderQueryService } from "../services/serviceInstances";
+import { OrderValidator } from "../utils/orderValidator";
 import { OrderMapper } from "../domain/mappers/orderMapper";
 import { extractToken } from "../utils/tokenExtractor";
 import { PaginationMetaDto } from "../domain/dtos/response/PaginatedResponseDto";
+import { ApiResponse } from "../types";
 
 /**
  * OrderController - Handles HTTP requests for orders
- * Uses DI Container, Validators, and Mappers for clean separation
+ * Uses service instances, validators, and mappers for clean separation
  */
 export class OrderController {
-  private cartService = DIContainer.getCartService();
-  private orderService = DIContainer.getOrderService();
-  private orderQueryService = DIContainer.getOrderQueryService();
 
   /**
    * CU022 - Add product to cart
    * POST /api/orders/cart/product
    */
-  addProductToCart = async (req: Request, res: Response): Promise<void> => {
+  addProductToCart = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const { idProducto, cantidad } = req.body;
       const idUsuario = OrderValidator.validateAuthenticatedUser(req, res);
@@ -33,21 +31,23 @@ export class OrderController {
       }
 
       const accessToken = extractToken(req);
-      const resultado = await this.cartService.addProductToCart(
+      const resultado = await cartService.addProductToCart(
         idUsuario,
         idProducto,
         cantidad,
         accessToken
       );
 
-      res.status(resultado.status).json(resultado.data || { success: false, message: resultado.message });
+      const response: ApiResponse<any> = {
+        success: resultado.status < 400,
+        data: resultado.data || null,
+        message: resultado.message || "Producto agregado al carrito",
+        timestamp: new Date().toISOString()
+      };
+
+      res.status(resultado.status).json(response);
     } catch (error: any) {
-      console.error("Error al añadir producto al carrito:", error);
-      res.status(500).json({ 
-        success: false,
-        message: "Error al añadir producto al carrito",
-        error: error.message 
-      });
+      next(error);
     }
   };
 
@@ -55,39 +55,39 @@ export class OrderController {
    * Get current cart
    * GET /api/orders/cart
    */
-  getCart = async (req: Request, res: Response): Promise<void> => {
+  getCart = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const idUsuario = OrderValidator.validateAuthenticatedUser(req, res);
       if (!idUsuario) return;
 
-      const carrito = await this.cartService.getCurrentCart(idUsuario);
+      const carrito = await cartService.getCurrentCart(idUsuario);
 
       if (!carrito) {
-        res.status(200).json({
+        const response: ApiResponse<null> = {
           success: true,
           message: "El carrito está vacío",
-          data: null
-        });
+          data: null,
+          timestamp: new Date().toISOString()
+        };
+        res.status(200).json(response);
         return;
       }
 
-      const productos = await this.cartService.getCartProducts(idUsuario);
+      const productos = await cartService.getCartProducts(idUsuario);
 
-      res.status(200).json({
+      const response: ApiResponse<any> = {
         success: true,
         data: {
           pedido: OrderMapper.toDto(carrito),
           productos: productos.map(p => OrderMapper.toProductDto(p))
-        }
-      });
+        },
+        message: "Carrito obtenido exitosamente",
+        timestamp: new Date().toISOString()
+      };
 
+      res.status(200).json(response);
     } catch (error: any) {
-      console.error("Error al obtener carrito:", error);
-      res.status(500).json({ 
-        success: false,
-        message: "Error al obtener el carrito",
-        error: error.message 
-      });
+      next(error);
     }
   };
 
@@ -95,27 +95,29 @@ export class OrderController {
    * CU035 - Confirm order
    * POST /api/orders/confirm
    */
-  confirmOrder = async (req: Request, res: Response): Promise<void> => {
+  confirmOrder = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const { direccionEntrega } = req.body;
       const idUsuario = OrderValidator.validateAuthenticatedUser(req, res);
       if (!idUsuario) return;
 
       const accessToken = extractToken(req);
-      const resultado = await this.orderService.confirmOrder(
+      const resultado = await orderService.confirmOrder(
         idUsuario,
         { direccionEntrega },
         accessToken
       );
 
-      res.status(resultado.status).json(resultado.data || { success: false, message: resultado.message });
+      const response: ApiResponse<any> = {
+        success: resultado.status < 400,
+        data: resultado.data || null,
+        message: resultado.message || "Pedido confirmado exitosamente",
+        timestamp: new Date().toISOString()
+      };
+
+      res.status(resultado.status).json(response);
     } catch (error: any) {
-      console.error("Error al confirmar pedido:", error);
-      res.status(500).json({ 
-        success: false,
-        message: "Error al confirmar el pedido. Intente más tarde",
-        error: error.message 
-      });
+      next(error);
     }
   };
 
@@ -123,7 +125,7 @@ export class OrderController {
    * CU37 - Add product to existing order
    * POST /api/orders/:idPedido/product
    */
-  addProductToOrder = async (req: Request, res: Response): Promise<void> => {
+  addProductToOrder = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const { idProducto, cantidad } = req.body;
       const idPedido = OrderValidator.validateIntegerId(req.params.idPedido, "ID de pedido", res);
@@ -138,45 +140,32 @@ export class OrderController {
       }
 
       const accessToken = extractToken(req);
-      const resultado = await this.orderService.addProductToOrder(
+      const resultado = await orderService.addProductToOrder(
         idPedido,
         idProducto,
         cantidad,
         accessToken
       );
 
-      const productos = await this.orderQueryService.getOrderProducts(idPedido);
+      const productos = await orderQueryService.getOrderProducts(idPedido);
 
-      res.status(200).json({
+      const response: ApiResponse<any> = {
         success: true,
-        message: resultado.mensaje,
         data: {
           pedido: {
             ...OrderMapper.toDto(resultado.pedido),
             cantidadProductos: productos.length
           },
           productoPedido: OrderMapper.toProductDto(resultado.productoPedido)
-        }
-      });
+        },
+        message: resultado.mensaje,
+        timestamp: new Date().toISOString()
+      };
+
+      res.status(200).json(response);
 
     } catch (error: any) {
-      console.error("Error al agregar producto al pedido:", error);
-
-      if (error.message === "El pedido no existe") {
-        res.status(404).json({ success: false, message: error.message });
-        return;
-      }
-
-      if (error.message.includes("cancelado") || error.message.includes("sin stock") || error.message.includes("no está disponible")) {
-        res.status(400).json({ success: false, message: error.message });
-        return;
-      }
-
-      res.status(500).json({ 
-        success: false,
-        message: "Error al agregar producto al pedido",
-        error: error.message 
-      });
+      next(error);
     }
   };
 
@@ -184,38 +173,40 @@ export class OrderController {
    * Get order by ID
    * GET /api/orders/:idPedido
    */
-  getOrderById = async (req: Request, res: Response): Promise<void> => {
+  getOrderById = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const idPedido = OrderValidator.validateIntegerId(req.params.idPedido, "ID de pedido", res);
       if (!idPedido) return;
 
-      const pedido = await this.orderQueryService.getOrderById(idPedido);
+      const pedido = await orderQueryService.getOrderById(idPedido);
 
       if (!pedido) {
-        res.status(404).json({
+        const response: ApiResponse<null> = {
           success: false,
-          message: "El pedido no existe"
-        });
+          data: null,
+          message: "El pedido no existe",
+          timestamp: new Date().toISOString()
+        };
+        res.status(404).json(response);
         return;
       }
 
-      const productos = await this.orderQueryService.getOrderProducts(idPedido);
+      const productos = await orderQueryService.getOrderProducts(idPedido);
 
-      res.status(200).json({
+      const response: ApiResponse<any> = {
         success: true,
         data: {
           pedido: OrderMapper.toDto(pedido),
           productos: productos.map(p => OrderMapper.toProductDto(p))
-        }
-      });
+        },
+        message: "Pedido obtenido exitosamente",
+        timestamp: new Date().toISOString()
+      };
+
+      res.status(200).json(response);
 
     } catch (error: any) {
-      console.error("Error al obtener pedido:", error);
-      res.status(500).json({ 
-        success: false,
-        message: "Error al obtener el pedido",
-        error: error.message 
-      });
+      next(error);
     }
   };
 
@@ -223,7 +214,7 @@ export class OrderController {
    * CU033 - List order history with pagination
    * GET /api/orders/history?page=1&limit=20
    */
-  listOrderHistory = async (req: Request, res: Response): Promise<void> => {
+  listOrderHistory = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const idUsuario = OrderValidator.validateAuthenticatedUser(req, res);
       if (!idUsuario) return;
@@ -247,35 +238,40 @@ export class OrderController {
         const estado = req.query.estado as string;
         
         if (!estadosValidos.includes(estado)) {
-          res.status(400).json({
+          const response: ApiResponse<null> = {
             success: false,
-            message: `Estado inválido. Estados válidos: ${estadosValidos.join(', ')}`
-          });
+            data: null,
+            message: `Estado inválido. Estados válidos: ${estadosValidos.join(', ')}`,
+            timestamp: new Date().toISOString()
+          };
+          res.status(400).json(response);
           return;
         }
         
         filtros.estado = estado;
       }
 
-      const { orders, total } = await this.orderQueryService.getOrderHistory(idUsuario, page, limit, filtros);
+      const { orders, total } = await orderQueryService.getOrderHistory(idUsuario, page, limit, filtros);
 
       if (orders.length === 0) {
-        res.status(200).json({
+        const response = {
           success: true,
-          message: "No se encontraron pedidos anteriores",
           data: [],
+          message: "No se encontraron pedidos anteriores",
+          timestamp: new Date().toISOString(),
           pagination: {
             page,
             limit,
             total: 0,
             totalPages: 0
           }
-        });
+        };
+        res.status(200).json(response);
         return;
       }
 
       const pedidosFormateados = await Promise.all(orders.map(async (pedido) => {
-        const productos = await this.orderQueryService.getOrderProducts(pedido.idPedido);
+        const productos = await orderQueryService.getOrderProducts(pedido.idPedido);
         return {
           ...OrderMapper.toDto(pedido),
           cantidadProductos: productos.length
@@ -289,20 +285,18 @@ export class OrderController {
         totalPages: Math.ceil(total / limit)
       };
 
-      res.status(200).json({
+      const response = {
         success: true,
-        message: "Historial de pedidos obtenido exitosamente",
         data: pedidosFormateados,
+        message: "Historial de pedidos obtenido exitosamente",
+        timestamp: new Date().toISOString(),
         pagination
-      });
+      };
+
+      res.status(200).json(response);
 
     } catch (error: any) {
-      console.error("Error al obtener historial de pedidos:", error);
-      res.status(500).json({
-        success: false,
-        message: "Error al cargar los pedidos. Intente nuevamente",
-        error: error.message
-      });
+      next(error);
     }
   };
 
@@ -310,7 +304,7 @@ export class OrderController {
    * CU033 - Get customer order detail
    * GET /api/orders/:idPedido/detail
    */
-  getCustomerOrderDetail = async (req: Request, res: Response): Promise<void> => {
+  getCustomerOrderDetail = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const idUsuario = OrderValidator.validateAuthenticatedUser(req, res);
       if (!idUsuario) return;
@@ -318,34 +312,35 @@ export class OrderController {
       const idPedido = OrderValidator.validateIntegerId(req.params.idPedido, "ID de pedido", res);
       if (!idPedido) return;
 
-      const pedido = await this.orderQueryService.getCustomerOrderDetail(idPedido, idUsuario);
+      const pedido = await orderQueryService.getCustomerOrderDetail(idPedido, idUsuario);
 
       if (!pedido) {
-        res.status(404).json({
+        const response: ApiResponse<null> = {
           success: false,
-          message: "Pedido no encontrado o no tiene acceso a este pedido"
-        });
+          data: null,
+          message: "Pedido no encontrado o no tiene acceso a este pedido",
+          timestamp: new Date().toISOString()
+        };
+        res.status(404).json(response);
         return;
       }
 
-      const productos = await this.orderQueryService.getOrderProducts(pedido.idPedido);
+      const productos = await orderQueryService.getOrderProducts(pedido.idPedido);
 
-      res.status(200).json({
+      const response: ApiResponse<any> = {
         success: true,
-        message: "Detalle del pedido obtenido exitosamente",
         data: {
           ...OrderMapper.toDto(pedido),
           productos: productos.map(p => OrderMapper.toProductDto(p))
-        }
-      });
+        },
+        message: "Detalle del pedido obtenido exitosamente",
+        timestamp: new Date().toISOString()
+      };
+
+      res.status(200).json(response);
 
     } catch (error: any) {
-      console.error("Error al obtener detalle del pedido:", error);
-      res.status(500).json({
-        success: false,
-        message: "Error al cargar los pedidos. Intente nuevamente",
-        error: error.message
-      });
+      next(error);
     }
   };
 
@@ -353,7 +348,7 @@ export class OrderController {
    * CU034 - List orders in progress with pagination
    * GET /api/orders/in-progress?page=1&limit=20
    */
-  listOrdersInProgress = async (req: Request, res: Response): Promise<void> => {
+  listOrdersInProgress = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const idUsuario = OrderValidator.validateAuthenticatedUser(req, res);
       if (!idUsuario) return;
@@ -361,20 +356,22 @@ export class OrderController {
       const page = parseInt(req.query.page as string) || 1;
       const limit = parseInt(req.query.limit as string) || 20;
 
-      const { orders, total } = await this.orderQueryService.getOrdersInProgress(idUsuario, page, limit);
+      const { orders, total } = await orderQueryService.getOrdersInProgress(idUsuario, page, limit);
 
       if (orders.length === 0) {
-        res.status(200).json({
+        const response = {
           success: true,
-          message: "No tiene pedidos ni reservas en curso",
           data: [],
+          message: "No tiene pedidos ni reservas en curso",
+          timestamp: new Date().toISOString(),
           pagination: {
             page,
             limit,
             total: 0,
             totalPages: 0
           }
-        });
+        };
+        res.status(200).json(response);
         return;
       }
 
@@ -385,20 +382,18 @@ export class OrderController {
         totalPages: Math.ceil(total / limit)
       };
 
-      res.status(200).json({
+      const response = {
         success: true,
-        message: "Pedidos en curso obtenidos exitosamente",
         data: OrderMapper.toDtoList(orders),
+        message: "Pedidos en curso obtenidos exitosamente",
+        timestamp: new Date().toISOString(),
         pagination
-      });
+      };
+
+      res.status(200).json(response);
 
     } catch (error: any) {
-      console.error("Error al obtener pedidos en curso:", error);
-      res.status(500).json({
-        success: false,
-        message: "Error al consultar el estado. Intente más tarde",
-        error: error.message
-      });
+      next(error);
     }
   };
 
@@ -406,7 +401,7 @@ export class OrderController {
    * CU034 - Check order status
    * GET /api/orders/status/:idPedido
    */
-  checkOrderStatus = async (req: Request, res: Response): Promise<void> => {
+  checkOrderStatus = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const idUsuario = OrderValidator.validateAuthenticatedUser(req, res);
       if (!idUsuario) return;
@@ -414,29 +409,30 @@ export class OrderController {
       const idPedido = OrderValidator.validateIntegerId(req.params.idPedido, "ID de pedido", res);
       if (!idPedido) return;
 
-      const pedido = await this.orderQueryService.checkOrderStatus(idPedido, idUsuario);
+      const pedido = await orderQueryService.checkOrderStatus(idPedido, idUsuario);
 
       if (!pedido) {
-        res.status(404).json({
+        const response: ApiResponse<null> = {
           success: false,
-          message: "Número no válido. Verifique e intente nuevamente"
-        });
+          data: null,
+          message: "Número no válido. Verifique e intente nuevamente",
+          timestamp: new Date().toISOString()
+        };
+        res.status(404).json(response);
         return;
       }
 
-      res.status(200).json({
+      const response: ApiResponse<any> = {
         success: true,
+        data: OrderMapper.toDto(pedido),
         message: "Estado del pedido obtenido exitosamente",
-        data: OrderMapper.toDto(pedido)
-      });
+        timestamp: new Date().toISOString()
+      };
+
+      res.status(200).json(response);
 
     } catch (error: any) {
-      console.error("Error al consultar estado del pedido:", error);
-      res.status(500).json({
-        success: false,
-        message: "Error al consultar el estado. Intente más tarde",
-        error: error.message
-      });
+      next(error);
     }
   };
 
@@ -444,7 +440,7 @@ export class OrderController {
    * CU38 - Update order status
    * PATCH /api/orders/:idPedido/status
    */
-  updateOrderStatus = async (req: Request, res: Response): Promise<void> => {
+  updateOrderStatus = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const { nuevoEstado } = req.body;
       const idPedido = OrderValidator.validateIntegerId(req.params.idPedido, "ID de pedido", res);
@@ -454,45 +450,22 @@ export class OrderController {
         return;
       }
 
-      const pedidoActualizado = await this.orderService.updateOrderStatus(idPedido, nuevoEstado);
+      const pedidoActualizado = await orderService.updateOrderStatus(idPedido, nuevoEstado);
 
-      res.status(200).json({
+      const response: ApiResponse<any> = {
         success: true,
-        message: "Estado del pedido actualizado exitosamente",
         data: {
           ...OrderMapper.toDto(pedidoActualizado),
           estadoActual: pedidoActualizado.estado
-        }
-      });
+        },
+        message: "Estado del pedido actualizado exitosamente",
+        timestamp: new Date().toISOString()
+      };
+
+      res.status(200).json(response);
 
     } catch (error: any) {
-      console.error("Error al marcar estado del pedido:", error);
-
-      if (error.message.includes("Estado no válido") || error.message.includes("Transición de estado no permitida")) {
-        res.status(400).json({ success: false, message: error.message });
-        return;
-      }
-
-      if (error.message.includes("ya está en estado") || error.message.includes("ya está cancelado")) {
-        res.status(400).json({ success: false, message: error.message });
-        return;
-      }
-
-      if (error.message.includes("debe tener un pago registrado")) {
-        res.status(400).json({ success: false, message: error.message });
-        return;
-      }
-
-      if (error.message.includes("no existe o fue eliminado")) {
-        res.status(404).json({ success: false, message: error.message });
-        return;
-      }
-
-      res.status(500).json({
-        success: false,
-        message: "Error al actualizar el estado del pedido. Intente nuevamente",
-        error: error.message
-      });
+      next(error);
     }
   };
 
@@ -500,12 +473,12 @@ export class OrderController {
    * CU038 - List all orders with pagination
    * GET /api/orders/all?page=1&limit=20
    */
-  listAllOrders = async (req: Request, res: Response): Promise<void> => {
+  listAllOrders = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const page = parseInt(req.query.page as string) || 1;
       const limit = parseInt(req.query.limit as string) || 20;
 
-      const { orders, total } = await this.orderQueryService.listAllOrders(page, limit);
+      const { orders, total } = await orderQueryService.listAllOrders(page, limit);
 
       const pagination: PaginationMetaDto = {
         page,
@@ -514,20 +487,18 @@ export class OrderController {
         totalPages: Math.ceil(total / limit)
       };
 
-      res.status(200).json({
+      const response = {
         success: true,
-        message: "Lista de pedidos obtenida exitosamente",
         data: OrderMapper.toDtoList(orders),
+        message: "Lista de pedidos obtenida exitosamente",
+        timestamp: new Date().toISOString(),
         pagination
-      });
+      };
+
+      res.status(200).json(response);
 
     } catch (error: any) {
-      console.error("Error al listar pedidos:", error);
-      res.status(500).json({
-        success: false,
-        message: "Error al obtener la lista de pedidos",
-        error: error.message
-      });
+      next(error);
     }
   };
 
@@ -535,17 +506,20 @@ export class OrderController {
    * CU48 - Create customer order (presencial)
    * POST /api/orders/create-customer-order
    */
-  createCustomerOrder = async (req: Request, res: Response): Promise<void> => {
+  createCustomerOrder = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const { productos, idMesa } = req.body;
       const idUsuarioEmpleado = OrderValidator.validateAuthenticatedUser(req, res);
       if (!idUsuarioEmpleado) return;
 
       if (!productos || !Array.isArray(productos) || productos.length === 0) {
-        res.status(400).json({
+        const response: ApiResponse<null> = {
           success: false,
-          message: "Debe proporcionar al menos un producto"
-        });
+          data: null,
+          message: "Debe proporcionar al menos un producto",
+          timestamp: new Date().toISOString()
+        };
+        res.status(400).json(response);
         return;
       }
 
@@ -564,24 +538,26 @@ export class OrderController {
       }
 
       if (idMesa !== undefined && !Number.isInteger(idMesa)) {
-        res.status(400).json({
+        const response: ApiResponse<null> = {
           success: false,
-          message: "El campo 'idMesa' debe ser un número entero"
-        });
+          data: null,
+          message: "El campo 'idMesa' debe ser un número entero",
+          timestamp: new Date().toISOString()
+        };
+        res.status(400).json(response);
         return;
       }
 
       const accessToken = extractToken(req);
-      const resultado = await this.orderService.createCustomerOrder(
+      const resultado = await orderService.createCustomerOrder(
         idUsuarioEmpleado,
         productos,
         idMesa,
         accessToken
       );
 
-      res.status(201).json({
+      const response: ApiResponse<any> = {
         success: true,
-        message: resultado.mensaje,
         data: {
           pedido: {
             ...OrderMapper.toDto(resultado.pedido),
@@ -589,36 +565,15 @@ export class OrderController {
           },
           productos: resultado.productos.map(p => OrderMapper.toProductDto(p)),
           rutaPDF: resultado.rutaPDF
-        }
-      });
+        },
+        message: resultado.mensaje,
+        timestamp: new Date().toISOString()
+      };
+
+      res.status(201).json(response);
 
     } catch (error: any) {
-      console.error("Error al realizar pedido del cliente:", error);
-
-      if (error.message.includes("no está disponible") || error.message.includes("Stock insuficiente") || error.message.includes("mesa") || error.message.includes("Mesa")) {
-        res.status(400).json({ success: false, message: error.message });
-        return;
-      }
-
-      if (error.message.includes("error al generar recibo PDF") || error.message.includes("error al actualizar estado de la mesa")) {
-        res.status(201).json({
-          success: true,
-          message: "Pedido creado exitosamente",
-          warning: error.message
-        });
-        return;
-      }
-
-      if (error.message.includes("Error de conexión")) {
-        res.status(503).json({ success: false, message: error.message });
-        return;
-      }
-
-      res.status(500).json({
-        success: false,
-        message: "Error al registrar el pedido. Intente nuevamente",
-        error: error.message
-      });
+      next(error);
     }
   };
 
@@ -626,7 +581,7 @@ export class OrderController {
    * Update product quantity in cart
    * PATCH /api/orders/cart/product/:idProductoPedido
    */
-  updateProductQuantity = async (req: Request, res: Response): Promise<void> => {
+  updateProductQuantity = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const { cantidad } = req.body;
       const idProductoPedido = OrderValidator.validateIntegerId(req.params.idProductoPedido, "ID de producto", res);
@@ -642,16 +597,18 @@ export class OrderController {
 
       const idUsuario = req.user!.id;
 
-      const resultado = await this.cartService.updateProductQuantity(idProductoPedido, cantidad, idUsuario);
+      const resultado = await cartService.updateProductQuantity(idProductoPedido, cantidad, idUsuario);
 
-      res.status(resultado.status).json(resultado);
+      const response: ApiResponse<any> = {
+        success: resultado.status < 400,
+        data: resultado.data || null,
+        message: resultado.message || "Cantidad actualizada exitosamente",
+        timestamp: new Date().toISOString()
+      };
+
+      res.status(resultado.status).json(response);
     } catch (error: any) {
-      console.error("Error al actualizar cantidad del producto:", error);
-      res.status(500).json({
-        success: false,
-        message: 'Error al actualizar cantidad del producto',
-        error: error.message
-      });
+      next(error);
     }
   };
 
@@ -659,21 +616,25 @@ export class OrderController {
    * Remove product from cart
    * DELETE /api/orders/cart/product/:idProductoPedido
    */
-  removeProductFromCart = async (req: Request, res: Response): Promise<void> => {
+  removeProductFromCart = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const idProductoPedido = OrderValidator.validateIntegerId(req.params.idProductoPedido, "ID de producto", res);
       if (!idProductoPedido) return;
 
       const idUsuario = req.user!.id;
 
-      const resultado = await this.cartService.removeProductFromCart(idProductoPedido, idUsuario);
+      const resultado = await cartService.removeProductFromCart(idProductoPedido, idUsuario);
 
-      res.status(resultado.status).json(resultado);
+      const response: ApiResponse<any> = {
+        success: resultado.status < 400,
+        data: resultado.data || null,
+        message: resultado.message || "Producto eliminado del carrito",
+        timestamp: new Date().toISOString()
+      };
+
+      res.status(resultado.status).json(response);
     } catch (error: any) {
-      res.status(500).json({
-        message: 'Error al eliminar producto del carrito',
-        error: error.message
-      });
+      next(error);
     }
   };
 
@@ -681,18 +642,22 @@ export class OrderController {
    * Clear cart
    * DELETE /api/orders/cart
    */
-  clearCart = async (req: Request, res: Response): Promise<void> => {
+  clearCart = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const idUsuario = req.user!.id;
 
-      const resultado = await this.cartService.clearCart(idUsuario);
+      const resultado = await cartService.clearCart(idUsuario);
 
-      res.status(resultado.status).json(resultado);
+      const response: ApiResponse<any> = {
+        success: resultado.status < 400,
+        data: resultado.data || null,
+        message: resultado.message || "Carrito vaciado exitosamente",
+        timestamp: new Date().toISOString()
+      };
+
+      res.status(resultado.status).json(response);
     } catch (error: any) {
-      res.status(500).json({
-        message: 'Error al vaciar carrito',
-        error: error.message
-      });
+      next(error);
     }
   };
 
@@ -700,21 +665,25 @@ export class OrderController {
    * Cancel order
    * PATCH /api/orders/:idPedido/cancel
    */
-  cancelOrder = async (req: Request, res: Response): Promise<void> => {
+  cancelOrder = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const idPedido = OrderValidator.validateIntegerId(req.params.idPedido, "ID de pedido", res);
       if (!idPedido) return;
 
       const idUsuario = req.user!.id;
 
-      const resultado = await this.orderService.cancelOrder(idPedido, idUsuario);
+      const resultado = await orderService.cancelOrder(idPedido, idUsuario);
 
-      res.status(resultado.status).json(resultado);
+      const response: ApiResponse<any> = {
+        success: resultado.status < 400,
+        data: resultado.data || null,
+        message: resultado.message || "Pedido cancelado exitosamente",
+        timestamp: new Date().toISOString()
+      };
+
+      res.status(resultado.status).json(response);
     } catch (error: any) {
-      res.status(500).json({
-        message: 'Error al cancelar pedido',
-        error: error.message
-      });
+      next(error);
     }
   };
 
@@ -722,19 +691,23 @@ export class OrderController {
    * Remove product from order (employee/admin)
    * DELETE /api/orders/:idPedido/product/:idProductoPedido
    */
-  removeProductFromOrder = async (req: Request, res: Response): Promise<void> => {
+  removeProductFromOrder = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const idProductoPedido = OrderValidator.validateIntegerId(req.params.idProductoPedido, "ID de producto", res);
       if (!idProductoPedido) return;
 
-      const resultado = await this.orderService.removeProductFromOrder(idProductoPedido);
+      const resultado = await orderService.removeProductFromOrder(idProductoPedido);
 
-      res.status(resultado.status).json(resultado);
+      const response: ApiResponse<any> = {
+        success: resultado.status < 400,
+        data: resultado.data || null,
+        message: resultado.message || "Producto eliminado del pedido",
+        timestamp: new Date().toISOString()
+      };
+
+      res.status(resultado.status).json(response);
     } catch (error: any) {
-      res.status(500).json({
-        message: 'Error al eliminar producto del pedido',
-        error: error.message
-      });
+      next(error);
     }
   };
 
@@ -742,19 +715,23 @@ export class OrderController {
    * Delete order (employee/admin)
    * DELETE /api/orders/:idPedido
    */
-  deleteOrder = async (req: Request, res: Response): Promise<void> => {
+  deleteOrder = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const idPedido = OrderValidator.validateIntegerId(req.params.idPedido, "ID de pedido", res);
       if (!idPedido) return;
 
-      const resultado = await this.orderService.deleteOrder(idPedido);
+      const resultado = await orderService.deleteOrder(idPedido);
 
-      res.status(resultado.status).json(resultado);
+      const response: ApiResponse<any> = {
+        success: resultado.status < 400,
+        data: resultado.data || null,
+        message: resultado.message || "Pedido eliminado exitosamente",
+        timestamp: new Date().toISOString()
+      };
+
+      res.status(resultado.status).json(response);
     } catch (error: any) {
-      res.status(500).json({
-        message: 'Error al eliminar pedido',
-        error: error.message
-      });
+      next(error);
     }
   };
 }

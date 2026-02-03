@@ -1,6 +1,7 @@
 import express, { Express, Request, Response, NextFunction} from "express";
 import orderRoutes from "./routes/orderRoutes";
 import paymentRoutes from "./routes/paymentRoutes";
+import { errorMiddleware } from "./middlewares/error.middleware";
 
 const app: Express = express();
 
@@ -22,5 +23,7 @@ app.get('/health', (req, res) => {
 app.use("/api/orders", orderRoutes);
 app.use("/api/payments", paymentRoutes); 
 
+// Middleware de manejo de errores centralizado - DEBE SER EL ÚLTIMO
+app.use(errorMiddleware);
 
 export default app;

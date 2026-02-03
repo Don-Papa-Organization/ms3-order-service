@@ -1,27 +1,26 @@
-import { Request, Response } from "express";
-import { DIContainer } from "../di/container";
-import { OrderValidator } from "../validators/orderValidator";
+import { Request, Response, NextFunction } from "express";
+import { paymentService } from "../services/serviceInstances";
+import { OrderValidator } from "../utils/orderValidator";
 import { PaymentMapper } from "../domain/mappers/paymentMapper";
 import { extractToken } from "../utils/tokenExtractor";
 import { PaginationMetaDto } from "../domain/dtos/response/PaginatedResponseDto";
+import { ApiResponse } from "../types";
 
 /**
  * PaymentController - Handles HTTP requests for payments
  * Uses DI Container, Validators, and Mappers for clean separation
  */
 export class PaymentController {
-  private paymentService = DIContainer.getPaymentService();
-
   /**
    * CU39 - List pending payment orders with pagination
    * GET /api/payments/pending-orders?page=1&limit=20
    */
-  listPendingPaymentOrders = async (req: Request, res: Response): Promise<void> => {
+  listPendingPaymentOrders = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const page = parseInt(req.query.page as string) || 1;
       const limit = parseInt(req.query.limit as string) || 20;
 
-      const { pedidos, total } = await this.paymentService.listPendingPaymentOrders(page, limit);
+      const { pedidos, total } = await paymentService.listPendingPaymentOrders(page, limit);
 
       const pagination: PaginationMetaDto = {
         page,
@@ -30,7 +29,7 @@ export class PaymentController {
         totalPages: Math.ceil(total / limit)
       };
 
-      res.status(200).json({
+      const response = {
         success: true,
         message: "Lista de pedidos por pagar obtenida exitosamente",
         data: pedidos.map(p => ({
@@ -42,16 +41,14 @@ export class PaymentController {
           fechaPedido: p.fechaPedido,
           direccionEntrega: p.direccionEntrega
         })),
-        pagination
-      });
+        pagination,
+        timestamp: new Date().toISOString()
+      };
+
+      res.status(200).json(response);
 
     } catch (error: any) {
-      console.error("Error al listar pedidos por pagar:", error);
-      res.status(500).json({
-        success: false,
-        message: "Error al obtener la lista de pedidos por pagar",
-        error: error.message
-      });
+      next(error);
     }
   };
 
@@ -59,7 +56,7 @@ export class PaymentController {
    * CU39/CU40 - Register payment for order
    * POST /api/payments/register/:idPedido
    */
-  registerPayment = async (req: Request, res: Response): Promise<void> => {
+  registerPayment = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const { idMetodoPago, direccionEntrega } = req.body;
       const idPedido = OrderValidator.validateIntegerId(req.params.idPedido, "ID de pedido", res);
@@ -76,7 +73,7 @@ export class PaymentController {
       }
 
       const accessToken = extractToken(req);
-      const resultado = await this.paymentService.registerPayment(
+      const resultado = await paymentService.registerPayment(
         idPedido,
         idUsuario,
         idMetodoPago,
@@ -86,12 +83,7 @@ export class PaymentController {
 
       res.status(resultado.status).json(resultado.data || { success: false, message: resultado.message });
     } catch (error: any) {
-      console.error("Error al registrar pago:", error);
-      res.status(500).json({
-        success: false,
-        message: "Error al registrar el pago. Intente nuevamente",
-        error: error.message
-      });
+      next(error);
     }
   };
 
@@ -99,26 +91,24 @@ export class PaymentController {
    * CU40 - List payment methods
    * GET /api/payments/methods
    */
-  listPaymentMethods = async (req: Request, res: Response): Promise<void> => {
+  listPaymentMethods = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const metodos = await this.paymentService.listPaymentMethods();
+      const metodos = await paymentService.listPaymentMethods();
 
-      res.status(200).json({
+      const response: ApiResponse<any> = {
         success: true,
         message: "Métodos de pago obtenidos exitosamente",
         data: metodos.map(m => ({
           idMetodoPago: m.idMetodo,
           nombre: m.nombre
-        }))
-      });
+        })),
+        timestamp: new Date().toISOString()
+      };
+
+      res.status(200).json(response);
 
     } catch (error: any) {
-      console.error("Error al listar métodos de pago:", error);
-      res.status(500).json({
-        success: false,
-        message: "Error al obtener métodos de pago",
-        error: error.message
-      });
+      next(error);
     }
   };
 
@@ -126,7 +116,7 @@ export class PaymentController {
    * Create payment method
    * POST /api/payments/methods
    */
-  createPaymentMethod = async (req: Request, res: Response): Promise<void> => {
+  createPaymentMethod = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const { nombre } = req.body;
 
@@ -138,15 +128,10 @@ export class PaymentController {
         return;
       }
 
-      const resultado = await this.paymentService.createPaymentMethod(nombre.trim());
+      const resultado = await paymentService.createPaymentMethod(nombre.trim());
       res.status(resultado.status).json(resultado.data || { success: false, message: resultado.message });
     } catch (error: any) {
-      console.error("Error al crear método de pago:", error);
-      res.status(500).json({
-        success: false,
-        message: "Error al crear el método de pago",
-        error: error.message
-      });
+      next(error);
     }
   };
 
@@ -154,12 +139,12 @@ export class PaymentController {
    * Get payment method by ID
    * GET /api/payments/methods/:idMetodo
    */
-  getPaymentMethodById = async (req: Request, res: Response): Promise<void> => {
+  getPaymentMethodById = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const idMetodo = OrderValidator.validateIntegerId(req.params.idMetodo, "ID de método de pago", res);
       if (!idMetodo) return;
 
-      const metodo = await this.paymentService.getPaymentMethodById(idMetodo);
+      const metodo = await paymentService.getPaymentMethodById(idMetodo);
 
       if (!metodo) {
         res.status(404).json({
@@ -169,20 +154,19 @@ export class PaymentController {
         return;
       }
 
-      res.status(200).json({
+      const response = {
         success: true,
+        message: "Método de pago obtenido exitosamente",
         data: {
           idMetodoPago: metodo.idMetodo,
           nombre: metodo.nombre
-        }
-      });
+        },
+        timestamp: new Date().toISOString()
+      };
+
+      res.status(200).json(response);
     } catch (error: any) {
-      console.error("Error al obtener método de pago:", error);
-      res.status(500).json({
-        success: false,
-        message: "Error al obtener el método de pago",
-        error: error.message
-      });
+      next(error);
     }
   };
 
@@ -190,7 +174,7 @@ export class PaymentController {
    * Update payment method
    * PUT /api/payments/methods/:idMetodo
    */
-  updatePaymentMethod = async (req: Request, res: Response): Promise<void> => {
+  updatePaymentMethod = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const { nombre } = req.body;
       const idMetodo = OrderValidator.validateIntegerId(req.params.idMetodo, "ID de método de pago", res);
@@ -204,15 +188,10 @@ export class PaymentController {
         return;
       }
 
-      const resultado = await this.paymentService.updatePaymentMethod(idMetodo, nombre.trim());
+      const resultado = await paymentService.updatePaymentMethod(idMetodo, nombre.trim());
       res.status(resultado.status).json(resultado.data || { success: false, message: resultado.message });
     } catch (error: any) {
-      console.error("Error al actualizar método de pago:", error);
-      res.status(500).json({
-        success: false,
-        message: "Error al actualizar el método de pago",
-        error: error.message
-      });
+      next(error);
     }
   };
 
@@ -220,20 +199,15 @@ export class PaymentController {
    * Delete payment method
    * DELETE /api/payments/methods/:idMetodo
    */
-  deletePaymentMethod = async (req: Request, res: Response): Promise<void> => {
+  deletePaymentMethod = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const idMetodo = OrderValidator.validateIntegerId(req.params.idMetodo, "ID de método de pago", res);
       if (!idMetodo) return;
 
-      const resultado = await this.paymentService.deletePaymentMethod(idMetodo);
+      const resultado = await paymentService.deletePaymentMethod(idMetodo);
       res.status(resultado.status).json(resultado.data || { success: false, message: resultado.message });
     } catch (error: any) {
-      console.error("Error al eliminar método de pago:", error);
-      res.status(500).json({
-        success: false,
-        message: "Error al eliminar el método de pago",
-        error: error.message
-      });
+      next(error);
     }
   };
 
@@ -241,7 +215,7 @@ export class PaymentController {
    * CU041 - Get payment history with filters and pagination
    * GET /api/payments/history?page=1&limit=20
    */
-  getPaymentHistory = async (req: Request, res: Response): Promise<void> => {
+  getPaymentHistory = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const { fechaInicio, fechaFin, idMetodoPago, estado } = req.query;
       const page = parseInt(req.query.page as string) || 1;
@@ -265,7 +239,7 @@ export class PaymentController {
         filtros.estado = estado as string;
       }
 
-      const { pagos, total } = await this.paymentService.getPaymentHistory(page, limit, filtros);
+      const { pagos, total } = await paymentService.getPaymentHistory(page, limit, filtros);
 
       const pagination: PaginationMetaDto = {
         page,
@@ -274,20 +248,18 @@ export class PaymentController {
         totalPages: Math.ceil(total / limit)
       };
 
-      res.status(200).json({
+      const response = {
         success: true,
         message: "Historial de pagos obtenido exitosamente",
         data: PaymentMapper.toWithDetailsDtoList(pagos),
-        pagination
-      });
+        pagination,
+        timestamp: new Date().toISOString()
+      };
+
+      res.status(200).json(response);
 
     } catch (error: any) {
-      console.error("Error al obtener historial de pagos:", error);
-      res.status(500).json({
-        success: false,
-        message: "Error al obtener el historial de pagos",
-        error: error.message
-      });
+      next(error);
     }
   };
 
@@ -295,12 +267,12 @@ export class PaymentController {
    * Get all payments (admin only) with pagination
    * GET /api/payments/all?page=1&limit=20
    */
-  getAllPayments = async (req: Request, res: Response): Promise<void> => {
+  getAllPayments = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const page = parseInt(req.query.page as string) || 1;
       const limit = parseInt(req.query.limit as string) || 20;
 
-      const { pagos, total } = await this.paymentService.getAllPayments(page, limit);
+      const { pagos, total } = await paymentService.getAllPayments(page, limit);
 
       const pagination: PaginationMetaDto = {
         page,
@@ -309,20 +281,18 @@ export class PaymentController {
         totalPages: Math.ceil(total / limit)
       };
 
-      res.status(200).json({
+      const response = {
         success: true,
         message: "Lista completa de pagos obtenida exitosamente",
         data: PaymentMapper.toWithDetailsDtoList(pagos),
-        pagination
-      });
+        pagination,
+        timestamp: new Date().toISOString()
+      };
+
+      res.status(200).json(response);
 
     } catch (error: any) {
-      console.error("Error al obtener todos los pagos:", error);
-      res.status(500).json({
-        success: false,
-        message: "Error al obtener la lista completa de pagos",
-        error: error.message
-      });
+      next(error);
     }
   };
 
@@ -330,35 +300,24 @@ export class PaymentController {
    * CU041 - Get payment detail
    * GET /api/payments/:idPago
    */
-  getPaymentDetail = async (req: Request, res: Response): Promise<void> => {
+  getPaymentDetail = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const idPago = OrderValidator.validateIntegerId(req.params.idPago, "ID de pago", res);
       if (!idPago) return;
 
-      const detalle = await this.paymentService.getPaymentDetail(idPago);
+      const detalle = await paymentService.getPaymentDetail(idPago);
 
-      res.status(200).json({
+      const response = {
         success: true,
         message: "Detalle de pago obtenido exitosamente",
-        data: PaymentMapper.toWithDetailsDto(detalle)
-      });
+        data: PaymentMapper.toWithDetailsDto(detalle),
+        timestamp: new Date().toISOString()
+      };
+
+      res.status(200).json(response);
 
     } catch (error: any) {
-      console.error("Error al obtener detalle de pago:", error);
-      
-      if (error.message === "Pago no encontrado") {
-        res.status(404).json({
-          success: false,
-          message: error.message
-        });
-        return;
-      }
-
-      res.status(500).json({
-        success: false,
-        message: "Error al obtener el detalle del pago",
-        error: error.message
-      });
+      next(error);
     }
   };
 
@@ -366,12 +325,12 @@ export class PaymentController {
    * CU041 - Download payment receipt (PDF)
    * GET /api/payments/:idPago/receipt
    */
-  downloadReceipt = async (req: Request, res: Response): Promise<void> => {
+  downloadReceipt = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const idPago = OrderValidator.validateIntegerId(req.params.idPago, "ID de pago", res);
       if (!idPago) return;
 
-      const detalle = await this.paymentService.getPaymentDetail(idPago);
+      const detalle = await paymentService.getPaymentDetail(idPago);
 
       if (!detalle.urlComprobante) {
         res.status(404).json({
@@ -401,12 +360,7 @@ export class PaymentController {
       fileStream.pipe(res);
 
     } catch (error: any) {
-      console.error("Error al descargar comprobante:", error);
-      res.status(500).json({
-        success: false,
-        message: "Error al descargar el comprobante",
-        error: error.message
-      });
+      next(error);
     }
   };
 }
