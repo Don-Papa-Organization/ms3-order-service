@@ -32,11 +32,12 @@ export class TableService {
     }
 
     try {
-      const response = await this.axiosInstance.get<{ mesas: Mesa[]; total: number }>(
+      const response = await this.axiosInstance.get(
         "/table", 
         { headers }
       );
-      return response.data.mesas || [];
+      const payload = response.data?.data ?? response.data;
+      return payload?.mesas || [];
     } catch (error: any) {
       if (error.response?.status === 401 || error.response?.status === 403) {
         throw new Error("Servicio de reservas rechazó la autenticación");
@@ -66,12 +67,12 @@ export class TableService {
     }
 
     try {
-      const response = await this.axiosInstance.patch<Mesa>(
+      const response = await this.axiosInstance.patch(
         `/table/${idMesa}/estado`,
         estado,
         { headers }
       );
-      return response.data;
+      return response.data?.data ?? response.data;
     } catch (error: any) {
       if (error.response?.status === 401 || error.response?.status === 403) {
         throw new Error(`Servicio de reservas rechazó la autenticación para la mesa ${idMesa}`);

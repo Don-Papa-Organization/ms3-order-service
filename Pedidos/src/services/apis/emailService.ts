@@ -1,6 +1,6 @@
 import axios from "axios"
 
-const EMAIL_SERVICE_URL = process.env.EMAIL_SERVICE_URL || 'http://email-service:3001';
+const EMAIL_SERVICE_URL = process.env.EMAIL_SERVICE_URL || 'http://email-service:4007';
 
 export const sendVerificationEmail = async (email: string, token: string) => {
   try {

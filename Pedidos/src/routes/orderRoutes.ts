@@ -17,7 +17,7 @@ router.post(
 
 /** Eliminar todas las cantidades de un producto del carrito con idProductoPedido (cliente) */
 router.delete(
-	"/cart/product/:idProductoPedido(\\d+)",
+	"/cart/product/:idProductoPedido",
 	authenticateToken,
 	requireUsuarioActivo,
 	requireRoles(TipoUsuario.cliente),
@@ -26,7 +26,7 @@ router.delete(
 
 /** Actualizar cantidad de un producto en el carrito (cliente) */
 router.patch(
-	"/cart/product/:idProductoPedido(\\d+)",
+	"/cart/product/:idProductoPedido",
 	authenticateToken,
 	requireUsuarioActivo,
 	requireRoles(TipoUsuario.cliente),
@@ -62,7 +62,7 @@ router.post(
 
 /** CU37 - Añadir productos a un pedido (empleado, administrador) */
 router.post(
-	"/:idPedido(\\d+)/product",
+	"/:idPedido/product",
 	authenticateToken,
 	requireUsuarioActivo,
 	requireRoles(TipoUsuario.empleado, TipoUsuario.administrador),
@@ -71,7 +71,7 @@ router.post(
 
 /** Eliminar un producto específico de un pedido (empleado, administrador) */
 router.delete(
-	"/:idPedido(\\d+)/product/:idProductoPedido(\\d+)",
+	"/:idPedido/product/:idProductoPedido",
 	authenticateToken,
 	requireUsuarioActivo,
 	requireRoles(TipoUsuario.empleado, TipoUsuario.administrador),
@@ -80,7 +80,7 @@ router.delete(
 
 /** Eliminar un pedido completo (empleado, administrador) */
 router.delete(
-	"/:idPedido(\\d+)",
+	"/:idPedido",
 	authenticateToken,
 	requireUsuarioActivo,
 	requireRoles(TipoUsuario.empleado, TipoUsuario.administrador),
@@ -89,7 +89,7 @@ router.delete(
 
 /** Obtener detalles de un pedido por ID (empleado, administrador) */
 router.get(
-	"/:idPedido(\\d+)",
+	"/:idPedido",
 	authenticateToken,
 	requireUsuarioActivo,
 	requireRoles(TipoUsuario.empleado, TipoUsuario.administrador),
@@ -107,7 +107,7 @@ router.get(
 
 /** CU033 - Consultar detalle completo de un pedido (cliente) */
 router.get(
-	"/:idPedido(\\d+)/detail",
+	"/:idPedido/detail",
 	authenticateToken,
 	requireUsuarioActivo,
 	requireRoles(TipoUsuario.cliente),
@@ -125,7 +125,7 @@ router.get(
 
 /** CU034 - Consultar estado de un pedido específico (cliente) */
 router.get(
-	"/status/:idPedido(\\d+)",
+	"/status/:idPedido",
 	authenticateToken,
 	requireUsuarioActivo,
 	requireRoles(TipoUsuario.cliente),
@@ -143,7 +143,7 @@ router.get(
 
 /** CU38 - Cambiar estado de un pedido (empleado, administrador) */
 router.patch(
-	"/:idPedido(\\d+)/status",
+	"/:idPedido/status",
 	authenticateToken,
 	requireUsuarioActivo,
 	requireRoles(TipoUsuario.empleado, TipoUsuario.administrador),

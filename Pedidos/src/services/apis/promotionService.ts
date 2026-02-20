@@ -31,8 +31,8 @@ export class PromotionService {
       headers['Authorization'] = `Bearer ${accessToken}`;
     }
     try {
-      const response = await this.axiosInstance.get<PromocionDto[]>('/promotions/activas/true', { headers });
-      return response.data;
+      const response = await this.axiosInstance.get('/promotions/activas/true', { headers });
+      return response.data?.data ?? response.data ?? [];
     } catch (error: any) {
       if (error.response?.status === 401 || error.response?.status === 403) {
         throw new Error('Servicio de eventos rechazó la autenticación');
@@ -54,11 +54,11 @@ export class PromotionService {
       headers['Authorization'] = `Bearer ${accessToken}`;
     }
     try {
-      const response = await this.axiosInstance.get<PromocionesProductoResponse>(
+      const response = await this.axiosInstance.get(
         `/productos-promocion/producto/${idProducto}/promociones`, 
         { headers }
       );
-      return response.data;
+      return response.data?.data ?? response.data ?? null;
     } catch (error: any) {
       if (error.response?.status === 404) return null;
       if (error.response?.status === 401 || error.response?.status === 403) {
