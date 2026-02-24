@@ -87,15 +87,6 @@ router.delete(
 	orderController.deleteOrder
 );
 
-/** Obtener detalles de un pedido por ID (empleado, administrador) */
-router.get(
-	"/:idPedido",
-	authenticateToken,
-	requireUsuarioActivo,
-	requireRoles(TipoUsuario.empleado, TipoUsuario.administrador),
-	orderController.getOrderById
-);
-
 /** CU033 - Consultar historial de pedidos del cliente (cliente) */
 router.get(
 	"/history",
@@ -103,15 +94,6 @@ router.get(
 	requireUsuarioActivo,
 	requireRoles(TipoUsuario.cliente),
 	orderController.listOrderHistory
-);
-
-/** CU033 - Consultar detalle completo de un pedido (cliente) */
-router.get(
-	"/:idPedido/detail",
-	authenticateToken,
-	requireUsuarioActivo,
-	requireRoles(TipoUsuario.cliente),
-	orderController.getCustomerOrderDetail
 );
 
 /** CU034 - Listar pedidos en curso del cliente (cliente) */
@@ -123,6 +105,15 @@ router.get(
 	orderController.listOrdersInProgress
 );
 
+/** CU038 - Listar todos los pedidos del sistema (empleado, administrador) */
+router.get(
+	"/all",
+	authenticateToken,
+	requireUsuarioActivo,
+	requireRoles(TipoUsuario.empleado, TipoUsuario.administrador),
+	orderController.listAllOrders
+);
+
 /** CU034 - Consultar estado de un pedido específico (cliente) */
 router.get(
 	"/status/:idPedido",
@@ -132,13 +123,22 @@ router.get(
 	orderController.checkOrderStatus
 );
 
-/** CU038 - Listar todos los pedidos del sistema (empleado, administrador) */
+/** Obtener detalles de un pedido por ID (empleado, administrador) */
 router.get(
-	"/all",
+	"/:idPedido",
 	authenticateToken,
 	requireUsuarioActivo,
 	requireRoles(TipoUsuario.empleado, TipoUsuario.administrador),
-	orderController.listAllOrders
+	orderController.getOrderById
+);
+
+/** CU033 - Consultar detalle completo de un pedido (cliente) */
+router.get(
+	"/:idPedido/detail",
+	authenticateToken,
+	requireUsuarioActivo,
+	requireRoles(TipoUsuario.cliente),
+	orderController.getCustomerOrderDetail
 );
 
 /** CU38 - Cambiar estado de un pedido (empleado, administrador) */

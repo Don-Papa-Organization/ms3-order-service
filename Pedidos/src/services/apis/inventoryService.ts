@@ -118,24 +118,29 @@ export class InventoryService {
         'Content-Type': 'application/json',
       };
 
-      if (accessToken) {
-        headers['Authorization'] = `Bearer ${accessToken}`;
+      const internalToken = process.env.INTERNAL_SERVICE_TOKEN || "variablegenerica";
+
+      if (internalToken) {
+        headers['x-internal-token'] = internalToken;
+        await this.axiosInstance.patch(
+          `/internal/products/${idProducto}/stock`,
+          { cantidadCambio: -Math.abs(cantidad) },
+          { headers }
+        );
+        return;
       }
 
-      // TODO: Implementar endpoint en MS1 Inventory Service
-      // POST /api/products/:idProducto/reduce-stock
-      // Body: { cantidad: number }
-      
-      // Por ahora, lanzar error indicando que debe implementarse
-      console.warn(`TODO: Llamar a MS1 para reducir stock del producto ${idProducto} en ${cantidad} unidades`);
-      
-      // Descomentar cuando MS1 implemente el endpoint:
-      // const response = await this.axiosInstance.post(
-      //   `/products/${idProducto}/reduce-stock`,
-      //   { cantidad },
-      //   { headers }
-      // );
-      // return response.data;
+      if (accessToken) {
+        headers['Authorization'] = `Bearer ${accessToken}`;
+        await this.axiosInstance.patch(
+          `/products/${idProducto}/stock`,
+          { cantidadCambio: -Math.abs(cantidad) },
+          { headers }
+        );
+        return;
+      }
+
+      throw new Error('No hay token disponible para reducir stock');
       
     } catch (error: any) {
       if (error.response?.status === 400) {
