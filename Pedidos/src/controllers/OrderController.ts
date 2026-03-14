@@ -233,6 +233,46 @@ export class OrderController {
   };
 
   /**
+   * Get latest open order by table.
+   * GET /api/orders/mesa/:idMesa/open
+   */
+  getOpenOrderByMesa = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const idMesa = OrderValidator.validateIntegerId(req.params.idMesa, "ID de mesa", res);
+      if (!idMesa) return;
+
+      const pedido = await orderQueryService.getOpenOrderByMesa(idMesa);
+
+      if (!pedido) {
+        const response: ApiResponse<null> = {
+          success: true,
+          data: null,
+          message: "No hay pedido abierto para la mesa indicada",
+          timestamp: new Date().toISOString()
+        };
+        res.status(200).json(response);
+        return;
+      }
+
+      const productos = await orderQueryService.getOrderProducts(pedido.idPedido);
+
+      const response: ApiResponse<any> = {
+        success: true,
+        data: {
+          pedido: OrderMapper.toDto(pedido),
+          productos: productos.map(p => OrderMapper.toProductDto(p))
+        },
+        message: "Pedido abierto obtenido exitosamente",
+        timestamp: new Date().toISOString()
+      };
+
+      res.status(200).json(response);
+    } catch (error: any) {
+      next(error);
+    }
+  };
+
+  /**
    * CU033 - List order history with pagination
    * GET /api/orders/history?page=1&limit=20
    */
@@ -492,6 +532,55 @@ export class OrderController {
   };
 
   /**
+   * Update quantity of a product line in an order.
+   * PATCH /api/orders/:idPedido/product/:idProductoPedido
+   */
+  updateOrderProductQuantity = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const { cantidad } = req.body;
+      const idPedido = OrderValidator.validateIntegerId(req.params.idPedido, "ID de pedido", res);
+      if (!idPedido) return;
+
+      const idProductoPedido = OrderValidator.validateIntegerId(req.params.idProductoPedido, "ID de producto del pedido", res);
+      if (!idProductoPedido) return;
+
+      if (!OrderValidator.validateRequiredFields({ cantidad }, ['cantidad'], res)) {
+        return;
+      }
+
+      if (!OrderValidator.validateIntegerFields({ cantidad }, ['cantidad'], res)) {
+        return;
+      }
+
+      if (!OrderValidator.validatePositiveNumber(cantidad, 'Cantidad', res)) {
+        return;
+      }
+
+      const accessToken = extractToken(req);
+      const resultado = await orderService.updateOrderProductQuantity(
+        idPedido,
+        idProductoPedido,
+        cantidad,
+        accessToken
+      );
+
+      const response: ApiResponse<any> = {
+        success: true,
+        data: {
+          pedido: OrderMapper.toDto(resultado.pedido),
+          productoPedido: OrderMapper.toProductDto(resultado.productoPedido)
+        },
+        message: resultado.mensaje,
+        timestamp: new Date().toISOString()
+      };
+
+      res.status(200).json(response);
+    } catch (error: any) {
+      next(error);
+    }
+  };
+
+  /**
    * CU038 - List all orders with pagination
    * GET /api/orders/all?page=1&limit=20
    */
@@ -499,8 +588,46 @@ export class OrderController {
     try {
       const page = parseInt(req.query.page as string) || 1;
       const limit = parseInt(req.query.limit as string) || 20;
+      const filtros: {
+        busqueda?: string;
+        estado?: string;
+        fechaInicio?: Date;
+        fechaFin?: Date;
+      } = {};
 
-      const { orders, total } = await orderQueryService.listAllOrders(page, limit);
+      if (req.query.busqueda && String(req.query.busqueda).trim().length > 0) {
+        filtros.busqueda = String(req.query.busqueda).trim();
+      }
+
+      if (req.query.estado) {
+        const estado = String(req.query.estado);
+        const estadosValidos = ['sin_confirmar', 'pendiente', 'entregado', 'cancelado'];
+        if (!estadosValidos.includes(estado)) {
+          const response: ApiResponse<null> = {
+            success: false,
+            data: null,
+            message: `Estado inválido. Estados válidos: ${estadosValidos.join(', ')}`,
+            timestamp: new Date().toISOString()
+          };
+          res.status(400).json(response);
+          return;
+        }
+        filtros.estado = estado;
+      }
+
+      if (req.query.fechaInicio) {
+        filtros.fechaInicio = new Date(String(req.query.fechaInicio));
+      }
+
+      if (req.query.fechaFin) {
+        filtros.fechaFin = new Date(String(req.query.fechaFin));
+      }
+
+      if (filtros.fechaInicio && filtros.fechaFin && !OrderValidator.validateDateRange(filtros.fechaInicio, filtros.fechaFin, res)) {
+        return;
+      }
+
+      const { orders, total } = await orderQueryService.listAllOrders(page, limit, filtros);
 
       const pagination: PaginationMetaDto = {
         page,

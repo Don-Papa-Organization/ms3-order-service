@@ -418,6 +418,92 @@ export class OrderService {
   }
 
   /**
+   * Update quantity of an order line in a single operation.
+   */
+  async updateOrderProductQuantity(
+    idPedido: number,
+    idProductoPedido: number,
+    cantidad: number,
+    accessToken?: string
+  ): Promise<{ pedido: Pedido; productoPedido: ProductoPedido; mensaje: string }> {
+    if (cantidad <= 0) {
+      throw new Error("La cantidad debe ser mayor a 0");
+    }
+
+    const productoPedido = await ProductoPedido.findByPk(idProductoPedido, {
+      include: [{ model: Pedido }]
+    });
+
+    if (!productoPedido) {
+      throw new Error("Producto no encontrado en el pedido");
+    }
+
+    if (productoPedido.idPedido !== idPedido) {
+      throw new Error("La línea no pertenece al pedido indicado");
+    }
+
+    const pedido = productoPedido.pedido;
+
+    if (pedido.estado === 'entregado' || pedido.estado === 'cancelado') {
+      throw new Error("No se pueden modificar pedidos entregados o cancelados");
+    }
+
+    const producto = await this.inventoryService.getProductoById(productoPedido.idProducto, accessToken);
+    if (!producto || !producto.activo) {
+      throw new Error("El producto seleccionado no está disponible");
+    }
+
+    if (producto.stockActual < cantidad) {
+      throw new Error(`Stock insuficiente para el producto ${productoPedido.idProducto}. Disponible: ${producto.stockActual}, solicitado: ${cantidad}`);
+    }
+
+    const calculoPromocion = await this.priceCalculatorService.calcularPrecioConPromocion(
+      productoPedido.idProducto,
+      cantidad,
+      accessToken
+    );
+
+    const promoData = await this.promotionService?.checkProductoPromocionActiva(productoPedido.idProducto, accessToken) || { hasPromotion: false, promotion: null };
+    let promocionAplicada = false;
+    let idPromocion = null;
+    let cantidadMinimaRequerida = null;
+
+    if (promoData.hasPromotion && promoData.promotion) {
+      cantidadMinimaRequerida = promoData.promotion.cantidad_minima;
+      promocionAplicada = cantidad >= promoData.promotion.cantidad_minima;
+      idPromocion = promocionAplicada ? promoData.promotion.id : null;
+    }
+
+    const precioUnitario = calculoPromocion.precioFinal;
+    const subtotal = Number((precioUnitario * cantidad).toFixed(2));
+
+    await this.productoPedidoRepository.update(productoPedido.idProductoPedido, {
+      cantidad,
+      precioUnitario,
+      subtotal,
+      promocionAplicada,
+      idPromocion,
+      cantidadMinimaRequerida
+    });
+
+    const productoPedidoActualizado = await this.productoPedidoRepository.findById(productoPedido.idProductoPedido) as ProductoPedido;
+
+    const productosDelPedido = await this.productoPedidoRepository.findByPedido(idPedido);
+    const nuevoTotal = Number(
+      productosDelPedido.reduce((sum, prod) => sum + Number(prod.subtotal), 0).toFixed(2)
+    );
+
+    await this.pedidoRepository.update(idPedido, { total: nuevoTotal });
+    const pedidoActualizado = await this.pedidoRepository.findById(idPedido) as Pedido;
+
+    return {
+      pedido: pedidoActualizado,
+      productoPedido: productoPedidoActualizado,
+      mensaje: "Cantidad de producto actualizada exitosamente"
+    };
+  }
+
+  /**
    * Update order status (CU38)
    */
   async updateOrderStatus(

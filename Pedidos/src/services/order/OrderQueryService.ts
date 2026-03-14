@@ -1,5 +1,6 @@
 import { PedidoRepository } from "../../domain/repositories/pedidoRepository";
 import { ProductoPedidoRepository } from "../../domain/repositories/productoPedidoRepository";
+import { ListAllOrdersFilters } from "../../domain/repositories/pedidoRepository";
 import { Pedido } from "../../domain/models/pedido";
 import { ProductoPedido } from "../../domain/models/productoPedido";
 import { ServiceResult } from "../../types/pedido.types";
@@ -26,6 +27,13 @@ export class OrderQueryService {
    */
   async getOrderProducts(idPedido: number): Promise<ProductoPedido[]> {
     return await this.productoPedidoRepository.findByPedido(idPedido);
+  }
+
+  /**
+   * Get latest open order for a table.
+   */
+  async getOpenOrderByMesa(idMesa: number): Promise<Pedido | null> {
+    return await this.pedidoRepository.findLatestOpenByMesa(idMesa);
   }
 
   /**
@@ -132,15 +140,14 @@ export class OrderQueryService {
    */
   async listAllOrders(
     page: number = 1,
-    limit: number = 20
+    limit: number = 20,
+    filtros?: ListAllOrdersFilters
   ): Promise<{ orders: Pedido[]; total: number }> {
-    const offset = (page - 1) * limit;
-
-    const { rows: orders, count: total } = await this.pedidoRepository.findAndCountAll({
-      order: [['fechaPedido', 'DESC']],
+    const { rows: orders, count: total } = await this.pedidoRepository.findAndCountAllFiltered(
+      page,
       limit,
-      offset
-    });
+      filtros
+    );
 
     return { orders, total };
   }

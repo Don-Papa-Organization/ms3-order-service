@@ -114,6 +114,15 @@ router.get(
 	orderController.listAllOrders
 );
 
+/** Obtener pedido abierto por mesa (empleado, administrador) */
+router.get(
+	"/mesa/:idMesa/open",
+	authenticateToken,
+	requireUsuarioActivo,
+	requireRoles(TipoUsuario.empleado, TipoUsuario.administrador),
+	orderController.getOpenOrderByMesa
+);
+
 /** CU034 - Consultar estado de un pedido específico (cliente) */
 router.get(
 	"/status/:idPedido",
@@ -130,6 +139,15 @@ router.get(
 	requireUsuarioActivo,
 	requireRoles(TipoUsuario.empleado, TipoUsuario.administrador),
 	orderController.getOrderById
+);
+
+/** Actualizar cantidad de una línea del pedido (empleado, administrador) */
+router.patch(
+	"/:idPedido/product/:idProductoPedido",
+	authenticateToken,
+	requireUsuarioActivo,
+	requireRoles(TipoUsuario.empleado, TipoUsuario.administrador),
+	orderController.updateOrderProductQuantity
 );
 
 /** CU033 - Consultar detalle completo de un pedido (cliente) */
