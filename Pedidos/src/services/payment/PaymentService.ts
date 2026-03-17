@@ -83,11 +83,20 @@ export class PaymentService {
         };
       }
 
-      if (pedido.estado !== 'sin_confirmar') {
+      if (pedido.estado !== 'sin_confirmar' && pedido.estado !== 'pendiente') {
         await transaction.rollback();
         return { 
           status: 400, 
           message: `El pedido no puede ser pagado. Estado actual: ${pedido.estado}` 
+        };
+      }
+
+      const pagosExistentes = await this.pagoRepository.findByPedido(idPedido);
+      if (pagosExistentes.length > 0) {
+        await transaction.rollback();
+        return {
+          status: 400,
+          message: "El pedido ya tiene un pago registrado"
         };
       }
 
@@ -171,6 +180,8 @@ export class PaymentService {
         }
       }
       totalConPromociones = Number(totalConPromociones.toFixed(2));
+
+      totalConPromociones = Math.max(0, Number(totalConPromociones.toFixed(2)));
 
       const normalizedPaymentLines = paymentLinesInput.map((linea) => ({
         idMetodoPago: Number(linea.idMetodoPago),
@@ -293,30 +304,31 @@ export class PaymentService {
         });
       }
 
-      // Update order to 'pendiente'
+      const estadoFinalPedido = pedido.canalVenta === 'fisico' ? 'entregado' : 'pendiente';
+
+      // Para pedidos POS (canal fisico) se marca como entregado al registrar el pago.
       await this.pedidoRepository.update(idPedido, {
         total: totalConPromociones,
-        estado: 'pendiente',
+        estado: estadoFinalPedido,
         direccionEntrega: direccionFinal
       });
 
       const pedidoActualizado = await this.pedidoRepository.findById(idPedido) as Pedido;
 
-      // Generate PDF receipt
-      let rutaPDF: string;
-      let nombreMesa: string | undefined;
-
       if (pedidoActualizado.idMesa) {
         try {
-          const mesas = await this.tableService.getAllMesas();
-          const mesa = mesas.find((m: any) => m.idMesa === pedidoActualizado.idMesa);
-          if (mesa) {
-            nombreMesa = `Mesa ${mesa.numeroMesa}`;
-          }
+          await this.tableService.updateMesaEstado(
+            pedidoActualizado.idMesa,
+            { estado: 'Disponible' },
+            accessToken
+          );
         } catch (error) {
-          console.error("Error al obtener información de mesa:", error);
+          console.warn(`No se pudo actualizar la mesa ${pedidoActualizado.idMesa} a Disponible tras el pago.`);
         }
       }
+
+      // Generate PDF receipt
+      let rutaPDF: string;
 
       const productIds = [...new Set(productos.map((p) => p.idProducto))];
       const productNamesById = new Map<number, string>();
@@ -337,7 +349,6 @@ export class PaymentService {
         rutaPDF = await generarReciboPDF({
           pedido: pedidoActualizado,
           productos: productos,
-          nombreMesa: nombreMesa,
           nombresProductos: productNamesById,
           metodosPago: normalizedPaymentLines.map((linea) => ({
             nombreMetodo: metodosPagoPorId.get(linea.idMetodoPago)?.nombre || `Método ${linea.idMetodoPago}`,

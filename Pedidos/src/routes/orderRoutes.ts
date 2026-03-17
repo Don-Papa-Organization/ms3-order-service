@@ -123,6 +123,15 @@ router.get(
 	orderController.getOpenOrderByMesa
 );
 
+/** Obtener precios promocionales para un lote de productos (empleado, administrador) */
+router.post(
+	"/products/promotion-pricing",
+	authenticateToken,
+	requireUsuarioActivo,
+	requireRoles(TipoUsuario.empleado, TipoUsuario.administrador),
+	orderController.getProductsPromotionPricing
+);
+
 /** CU034 - Consultar estado de un pedido específico (cliente) */
 router.get(
 	"/status/:idPedido",

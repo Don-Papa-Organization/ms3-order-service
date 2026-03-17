@@ -26,6 +26,14 @@ export interface ReciboPedidoData {
 export const generarReciboPDF = async (data: ReciboPedidoData): Promise<string> => {
   return new Promise((resolve, reject) => {
     try {
+      const fechaColombia = new Intl.DateTimeFormat('es-CO', {
+        dateStyle: 'short',
+        timeStyle: 'medium',
+        timeZone: 'America/Bogota'
+      }).format(new Date(data.pedido.fechaPedido));
+
+      const esParaLlevar = (data.pedido.tipoAtencion || '').toLowerCase() === 'llevar';
+
       // Crear directorio de recibos si no existe
       const recibosDir = path.join(process.cwd(), process.env.RECEIPTS_DIR || 'recibos');
       if (!fs.existsSync(recibosDir)) {
@@ -53,19 +61,20 @@ export const generarReciboPDF = async (data: ReciboPedidoData): Promise<string> 
       doc
         .fontSize(12)
         .text(`Pedido #${data.pedido.idPedido}`, { align: 'left' })
-        .text(`Fecha: ${new Date(data.pedido.fechaPedido).toLocaleString('es-ES')}`)
+        .text(`Fecha (Colombia): ${fechaColombia}`)
         .text(`Estado: ${data.pedido.estado.toUpperCase()}`)
         .text(`Canal: ${data.pedido.canalVenta}`)
+        .text(`Para llevar: ${esParaLlevar ? 'SI' : 'NO'}`)
         .moveDown();
 
       // Información de mesa si aplica
       if (data.pedido.idMesa) {
         doc
-          .text(`Mesa: ${data.nombreMesa || `#${data.pedido.idMesa}`}`)
+          .text(`Mesa (ID POS): ${data.pedido.idMesa}`)
           .moveDown();
       } else {
         doc
-          .text('Tipo: PARA LLEVAR')
+          .text('Mesa (ID POS): No aplica')
           .moveDown();
       }
 

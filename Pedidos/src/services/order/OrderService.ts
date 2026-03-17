@@ -234,11 +234,14 @@ export class OrderService {
           throw new Error(`La mesa con ID ${idMesa} no existe`);
         }
 
-        if (mesa.estado !== 'Disponible') {
-          throw new Error(`La mesa ${mesa.numeroMesa} no está disponible. Estado actual: ${mesa.estado}`);
+        const pedidoAbierto = await this.pedidoRepository.findLatestOpenByMesa(idMesa);
+        if (pedidoAbierto) {
+          const numeroMesa = (mesa as any).numero ?? (mesa as any).numeroMesa ?? idMesa;
+          throw new Error(`La mesa ${numeroMesa} no está disponible. Estado actual: Ocupada`);
         }
 
-        nombreMesa = `Mesa ${mesa.numeroMesa}`;
+        const numeroMesa = (mesa as any).numero ?? (mesa as any).numeroMesa ?? idMesa;
+        nombreMesa = `Mesa ${numeroMesa}`;
       }
 
       const pedido = await this.pedidoRepository.create({
@@ -273,7 +276,7 @@ export class OrderService {
       }
 
       await this.pedidoRepository.update(pedido.idPedido, {
-        total: totalPedido
+        total: Number(totalPedido.toFixed(2))
       });
 
       const pedidoActualizado = await this.pedidoRepository.findById(pedido.idPedido) as Pedido;
@@ -399,10 +402,12 @@ export class OrderService {
 
     const productosDelPedido = await this.productoPedidoRepository.findByPedido(idPedido);
 
-    const nuevoTotal = productosDelPedido.reduce(
+    const subtotalPedido = productosDelPedido.reduce(
       (sum, prod) => sum + Number(prod.subtotal),
       0
     );
+
+    const nuevoTotal = Number(subtotalPedido.toFixed(2));
 
     await this.pedidoRepository.update(idPedido, {
       total: nuevoTotal
@@ -489,9 +494,10 @@ export class OrderService {
     const productoPedidoActualizado = await this.productoPedidoRepository.findById(productoPedido.idProductoPedido) as ProductoPedido;
 
     const productosDelPedido = await this.productoPedidoRepository.findByPedido(idPedido);
-    const nuevoTotal = Number(
+    const subtotalPedido = Number(
       productosDelPedido.reduce((sum, prod) => sum + Number(prod.subtotal), 0).toFixed(2)
     );
+    const nuevoTotal = subtotalPedido;
 
     await this.pedidoRepository.update(idPedido, { total: nuevoTotal });
     const pedidoActualizado = await this.pedidoRepository.findById(idPedido) as Pedido;
@@ -638,10 +644,13 @@ export class OrderService {
         };
       }
 
-      const subtotalEliminado = productoPedido.subtotal;
       await productoPedido.destroy();
 
-      const nuevoTotal = pedido.total - subtotalEliminado;
+      const productosRestantes = await this.productoPedidoRepository.findByPedido(pedido.idPedido);
+      const subtotalPedido = Number(
+        productosRestantes.reduce((sum, prod) => sum + Number(prod.subtotal), 0).toFixed(2)
+      );
+      const nuevoTotal = subtotalPedido;
       await this.pedidoRepository.update(pedido.idPedido, {
         total: nuevoTotal
       });
@@ -766,5 +775,39 @@ export class OrderService {
     }
 
     return Number(totalFinal.toFixed(2));
+  }
+
+  async getProductsPromotionPricing(productIds: number[], accessToken?: string): Promise<Array<{
+    idProducto: number;
+    precioOriginal: number;
+    precioPromocional: number | null;
+    tienePromocion: boolean;
+  }>> {
+    const ids = Array.from(new Set((productIds || []).map(id => Number(id)).filter(id => Number.isInteger(id) && id > 0)));
+
+    const results = await Promise.all(ids.map(async (idProducto) => {
+      try {
+        const calculo = await this.priceCalculatorService.calcularPrecioConPromocion(idProducto, 1, accessToken);
+        const precioOriginal = Number(calculo?.precioOriginal || 0);
+        const precioFinal = Number(calculo?.precioFinal || precioOriginal || 0);
+        const tienePromocion = Boolean(calculo?.tienePromocion && precioFinal < precioOriginal);
+
+        return {
+          idProducto,
+          precioOriginal,
+          precioPromocional: tienePromocion ? precioFinal : null,
+          tienePromocion
+        };
+      } catch (error) {
+        return {
+          idProducto,
+          precioOriginal: 0,
+          precioPromocional: null,
+          tienePromocion: false
+        };
+      }
+    }));
+
+    return results;
   }
 }

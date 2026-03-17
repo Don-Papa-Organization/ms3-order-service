@@ -26,9 +26,7 @@ export class PedidoRepository extends BaseRepository<Pedido> {
         return this.model.findOne({
             where: {
                 idMesa,
-                estado: {
-                    [Op.in]: ['sin_confirmar', 'pendiente']
-                }
+                estado: 'sin_confirmar'
             },
             order: [['fechaPedido', 'DESC']]
         });

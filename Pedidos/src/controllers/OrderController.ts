@@ -651,6 +651,52 @@ export class OrderController {
     }
   };
 
+  getProductsPromotionPricing = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const productIds = req.body?.productIds;
+
+      if (!Array.isArray(productIds)) {
+        const response: ApiResponse<null> = {
+          success: false,
+          data: null,
+          message: "El campo 'productIds' debe ser un arreglo de IDs",
+          timestamp: new Date().toISOString()
+        };
+        res.status(400).json(response);
+        return;
+      }
+
+      const idsNormalizados = Array.from(new Set(productIds
+        .map((id: any) => Number(id))
+        .filter((id: number) => Number.isInteger(id) && id > 0)));
+
+      if (idsNormalizados.length === 0) {
+        const response: ApiResponse<{ items: any[] }> = {
+          success: true,
+          data: { items: [] },
+          message: 'No se recibieron IDs válidos',
+          timestamp: new Date().toISOString()
+        };
+        res.status(200).json(response);
+        return;
+      }
+
+      const accessToken = extractToken(req);
+      const items = await orderService.getProductsPromotionPricing(idsNormalizados, accessToken);
+
+      const response: ApiResponse<{ items: any[] }> = {
+        success: true,
+        data: { items },
+        message: 'Precios promocionales obtenidos exitosamente',
+        timestamp: new Date().toISOString()
+      };
+
+      res.status(200).json(response);
+    } catch (error: any) {
+      next(error);
+    }
+  };
+
   /**
    * CU48 - Create customer order (presencial)
    * POST /api/orders/create-customer-order
